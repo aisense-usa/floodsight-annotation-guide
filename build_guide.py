@@ -223,7 +223,7 @@ def main():
             veg_score[iid] = (veg, -other)
     veg_ids = sorted(veg_score, key=lambda i: veg_score[i], reverse=True)[:VEG_RAW_N]
     veg_raw = [embed_image(os.path.join(IMGDIR, imgs[iid]["file_name"]),
-                           480 if k < 4 else 340, q=82)[0]      # first 4 bigger
+                           560 if k < 4 else 340, q=82)[0]      # first 4 bigger (2x2 large)
                for k, iid in enumerate(veg_ids)]
 
     dodont = []
@@ -316,7 +316,7 @@ code{font-family:var(--mono);background:var(--field);padding:1.5px 6px;border-ra
 header{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:1px solid var(--line)}
 .barwrap{max-width:1060px;margin:0 auto;padding:0 24px}
 .brandrow{display:flex;align-items:center;gap:14px;padding:10px 0 8px}
-.brand{font-family:var(--serif);font-weight:600;font-size:15px}
+.brand{font-family:var(--serif);font-weight:600;font-size:23px;letter-spacing:-.01em}
 .brand .dot{color:var(--accent)}
 .spacer{flex:1}
 .toggle{font-size:12.5px;font-weight:600;color:var(--ink);background:transparent;border:1px solid var(--line);
@@ -404,7 +404,7 @@ canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:7px;bac
 .vsub{font-weight:650;margin:16px 0 9px;font-size:15px}
 .vgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
 .vgrid img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;display:block;cursor:zoom-in}
-.vgrid-big{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+.vgrid-big{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px}
 .vgrid-big img{width:100%;height:auto;border:1px solid var(--line);border-radius:9px;display:block;cursor:zoom-in}
 @media(max-width:620px){.vgrid{grid-template-columns:repeat(3,1fr)}.vgrid-big{grid-template-columns:repeat(2,1fr)}}
 
@@ -452,7 +452,7 @@ canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:7px;bac
 .maphint{font-size:12.5px;color:var(--muted);margin-top:8px}
 
 /* do/don't figures */
-.figs{display:grid;gap:34px}
+.figs{display:grid;gap:30px;max-width:730px;margin:0 auto}
 figure.fig{margin:0}
 .fig .meta{display:flex;align-items:baseline;gap:11px;margin-bottom:10px}
 .fig .meta .fn{font-family:var(--serif);color:var(--accent);font-size:15px;font-weight:600}
@@ -498,16 +498,8 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
     <h2>How to decide what to mark</h2>
     <p class="lede" style="margin-bottom:18px">Look at one area at a time. Follow the steps from the top. The coloured box is the class to use.</p>
     <div id="flow"></div>
-  </section>
 
-  <!-- RULES -->
-  <section class="panel reading" id="tab-rules">
-    <div class="hero">
-      <p class="eyebrow">NAAMII · Agri AI Lab · Annotation protocol</p>
-      <h1>Farm boundary annotation, Nepal Terai</h1>
-      <p class="lede">Smallholder farmland from drone orthomosaics at roughly 4&nbsp;cm per pixel. Read this before your first tile, and keep it open while you work.</p>
-    </div>
-
+    <div class="reading" style="margin-top:48px">
     <div class="lead-rule">
       <p class="eyebrow" style="color:var(--accent)">The most important rule</p>
       <h2>A boundary is the mud line, not the colour</h2>
@@ -540,6 +532,7 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
         <li><b>Skip plain grass.</b> Leave it empty. Then check your work and save.</li>
       </ol>
       <p class="muted" style="margin-top:16px;font-size:15px"><b>Do not use the Brush tool.</b> <i>It makes messy labels.</i> See the tool guide under Do &amp; Don&rsquo;t.</p>
+    </div>
     </div>
   </section>
 
@@ -577,35 +570,20 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
     <h2>Do &amp; Don&rsquo;t</h2>
     <p class="lede" style="margin-bottom:22px">Reviewed cases from real tiles. Click any image to enlarge.</p>
     <div class="figs" id="figs"></div>
-  </section>
 
-  <!-- HARD CASES -->
-  <section class="panel reading" id="tab-hardcases">
-    <h2>Hard cases</h2>
-    <div class="hr" style="height:1px;background:var(--line);margin:12px 0 4px"></div>
-    <table>
-      <tr><th>Situation</th><th>What to do</th></tr>
-      <tr><td>Two green fields look identical across a faint line</td><td>It is a bund. Split into two parcels. Zoom in, the bund is a thin raised earthen ridge.</td></tr>
-      <tr><td>Bush vs trees</td><td>Trees are woody canopy with shadow and height, draw as <code>TREES</code>. Low bush or grass, leave it (vegetation).</td></tr>
-      <tr><td>Bush vs marsh-vegetation</td><td>Vegetation in waterlogged ground, draw as <code>MARSH_VEGETATION</code>. Dry low scrub, leave it (vegetation).</td></tr>
-      <tr><td>Open water vs marsh</td><td>Clear standing or flowing water is <code>WATER</code>. Vegetated waterlogged area is <code>MARSH_FIELD</code> or <code>MARSH_VEGETATION</code>.</td></tr>
-      <tr><td>Shadows or unclear</td><td>If you genuinely cannot tell, mark <code>EDGECASE_IGNORE</code>. Never force a class, never leave it blank (it would become vegetation).</td></tr>
-      <tr><td>Parcel runs off the tile edge</td><td>Label the visible part to the tile edge. It is re-joined with the neighbour tile later, do not invent beyond the image.</td></tr>
-    </table>
-  </section>
-
-  <!-- CHECKLIST -->
-  <section class="panel reading" id="tab-checklist">
-    <h2>Before you submit</h2>
-    <div class="hr" style="height:1px;background:var(--line);margin:12px 0 6px"></div>
-    <ul class="check">
-      <li>Every non-vegetation object is labeled. Anything missed becomes vegetation.</li>
-      <li>Every field parcel is split at its bund, no two parcels merged into one.</li>
-      <li>All polygons are closed and do not self-intersect or leave gaps.</li>
-      <li>Trees and marsh-vegetation drawn explicitly. <b>Plain vegetation left blank.</b></li>
-      <li>Anything ambiguous marked <code>EDGECASE_IGNORE</code>.</li>
-      <li>Edge-running parcels labeled up to the tile border.</li>
-    </ul>
+    <div class="reading" style="margin-top:48px">
+      <h2>Hard cases</h2>
+      <div class="hr" style="height:1px;background:var(--line);margin:12px 0 4px"></div>
+      <table>
+        <tr><th>Situation</th><th>What to do</th></tr>
+        <tr><td>Two green fields look identical across a faint line</td><td>It is a mud line. Split into two fields. Zoom in, the mud line is a thin raised ridge.</td></tr>
+        <tr><td>Bush vs trees</td><td>Trees are tall, leafy, with shadow, draw as <code>TREES</code>. Low bush or grass, leave it blank.</td></tr>
+        <tr><td>Bush vs marsh plants</td><td>Green plants on wet ground, draw as <code>MARSH_VEGETATION</code>. Dry low bush, leave it blank.</td></tr>
+        <tr><td>Open water vs marsh</td><td>Clear water is <code>WATER</code>. A wet, weedy area is <code>MARSH_FIELD</code> or <code>MARSH_VEGETATION</code>.</td></tr>
+        <tr><td>Shadows or unclear</td><td>If you cannot tell, mark <code>EDGECASE_IGNORE</code>. Never guess, never leave it blank.</td></tr>
+        <tr><td>A field runs off the tile edge</td><td>Label the part you can see, up to the edge. It joins the next tile later, do not invent beyond the image.</td></tr>
+      </table>
+    </div>
   </section>
 
   <footer>Examples auto-pulled from the 71 verified FloodSight tiles. BRIDGE and IRRIGATION_CHANNEL examples pending. Built for the NAAMII Agri AI annotation team.</footer>
@@ -616,8 +594,8 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
 <script>
 const D = /*__DATA__*/;
 const TAGTXT = {draw:"draw", nodraw:"do not draw", explicit:"draw explicitly"};
-const TABS = [["decide","How to decide"],["rules","Rules & Steps"],["videos","Videos"],["classes","Classes"],
-              ["maps","Maps"],["compare","Compare"],["examples","Do & Don't"],["hardcases","Hard cases"],["checklist","Checklist"]];
+const TABS = [["decide","Start here"],["videos","Demo Videos"],["classes","Classes"],
+              ["maps","Maps"],["compare","Compare"],["examples","Do & Don't"]];
 let GID = 0;
 
 /* tabs */
