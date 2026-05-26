@@ -16,17 +16,23 @@ IMGDIR = "/Users/jc/Downloads/FloodSight 2/train"
 DLDIR  = "/Users/jc/Downloads"
 OUT    = "/Users/jc/Downloads/floodsight-annotation-guide/index.html"
 
-# Onboarding videos + per-site index maps (committed to the repo under assets/)
+# Onboarding videos hosted on Google Drive (embedded via /preview iframe)
 VIDEOS = [
- {"title": "Quick demo", "desc": "A short look at the annotation tool to get you started.",
-  "src": "assets/videos/quickstart.mp4"},
- {"title": "Full walkthrough", "desc": "Annotating a tile step by step, start to finish.",
-  "src": "assets/videos/walkthrough.mp4"},
+ {"title": "Full annotation demo", "desc": "A complete walkthrough of annotating tiles, start to finish.",
+  "drive": "1r9JH2PTy91cnloy-kHa5twPbflCkDPjV"},
+ {"title": "Tool walkthrough", "desc": "A shorter look at the annotation tool and how to use it.",
+  "drive": "1z7Jtgngo6o2g8lCsHBuY1xzbKPfw0KnY"},
 ]
+# Deep-zoom maps: DZI pyramids generated from the original index maps, viewed with OpenSeadragon
+MAP_SRC = {
+ "HK": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HK/pre_flood/tile_index_map_3800.png",
+ "HR": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HR/pre_flood/tile_index_map_3800.png",
+ "SS": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/SS/pre_flood/tile_index_map_3800.png",
+}
 MAPS = [
- {"code": "HK", "name": "Hanumannagar Kankalini", "src": "assets/maps/hk_index.jpg"},
- {"code": "HR", "name": "Harinagar", "src": "assets/maps/hr_index.jpg"},
- {"code": "SS", "name": "Sunsari Saptakoshi", "src": "assets/maps/ss_index.jpg"},
+ {"code": "HK", "name": "Hanumannagar Kankalini", "dzi": "assets/maps/hk.dzi"},
+ {"code": "HR", "name": "Harinagar", "dzi": "assets/maps/hr.dzi"},
+ {"code": "SS", "name": "Sunsari Saptakoshi", "dzi": "assets/maps/ss.dzi"},
 ]
 
 OUT_PX   = 520
@@ -66,9 +72,7 @@ CLASS_INFO = {
  "MARSH_FIELD":     ["#FFFF54","draw","A wet field. Water or black wet patches inside a field edge.","Shiny water or dark wet ground in a field.","wet or flooded fields","using it for open water with no field"],
  "HOUSE":           ["#D2FB50","draw","A building roof.","Square roof with sharp edges and shadow.","each building","adding the yard around it"],
  "ROAD":            ["#7B2AF5","draw","A road, track, or path.","A long line that joins places.","roads and paths","marking field edges as roads"],
- "BRIDGE":          ["#E9335A","draw","A bridge over water or a channel.","Crosses a river or channel.","the bridge top","going onto the road past the bridge"],
  "WATER":           ["#F5C242","draw","Open water, like a river or pond.","Smooth, dark, no plants on top.","clear open water","including weedy marsh"],
- "IRRIGATION_CHANNEL":["#4A6F89","draw","A man-made water ditch that follows field edges.","Narrow, straight ditch along fields.","built ditches","marking natural streams as ditches"],
  "GROUND":          ["#0000F5","draw","Bare earth next to a house. No field edge around it.","Open dirt or yard by a house.","bare ground near houses","using it for empty fields (that is BARREN_FIELD)"],
  "SAND":            ["#965635","draw","Soft, pale sand near water or a riverbed.","Light, soft-looking, near water.","river sand and flood sand","mixing it up with hard bare ground"],
  "TREES":           ["#EA33F7","draw","Trees or groups of trees.","Round leafy tops, tall, with shadow.","trees and tree groups","including low grass or bush"],
@@ -85,13 +89,14 @@ GROUPS = {
  "ground":  ["GROUND","SAND"],
  "veg":     ["TREES","MARSH_VEGETATION"],
  "ignore":  ["EDGECASE_IGNORE"],
- "pending": ["BRIDGE","IRRIGATION_CHANNEL"],   # no example images yet, kept last
 }
 GROUP_TITLES = {"fields":"Fields","built":"Built structures","water":"Water",
                 "ground":"Ground and sand","veg":"Trees and marsh vegetation",
-                "ignore":"Ignore","pending":"Examples coming soon"}
-PLACEHOLDER = {"BRIDGE", "IRRIGATION_CHANNEL"}
+                "ignore":"Ignore"}
+PLACEHOLDER = set()
 VEG_RAW_N = 10   # raw vegetation example tiles for the top section
+
+PILOT = "/Users/jc/Downloads/nepal-farm-pilot/train"   # 2 fully-annotated example tiles
 
 
 # ---- COCO compressed-RLE decoder (pure python) ----
@@ -150,6 +155,35 @@ def embed_image(path, max_w, q=82):
         im = im.resize((max_w, round(im.height * max_w / im.width)), Image.LANCZOS)
     buf = io.BytesIO(); im.save(buf, "JPEG", quality=q)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(), im.width, im.height
+
+def make_dzi(src_path, out_dir, name, tile=510, overlap=1, q=90):
+    """Generate a Deep Zoom (.dzi + _files/) pyramid for OpenSeadragon. Returns (W,H,n_tiles)."""
+    import math
+    Image.MAX_IMAGE_PIXELS = None
+    im = Image.open(src_path).convert("RGB")
+    W, H = im.size
+    max_level = math.ceil(math.log2(max(W, H)))
+    files_dir = os.path.join(out_dir, name + "_files")
+    n = 0
+    for level in range(max_level + 1):
+        scale = 2 ** (max_level - level)
+        lw, lh = max(1, math.ceil(W / scale)), max(1, math.ceil(H / scale))
+        lim = im if (lw, lh) == (W, H) else im.resize((lw, lh), Image.LANCZOS)
+        ld = os.path.join(files_dir, str(level)); os.makedirs(ld, exist_ok=True)
+        cols, rows = math.ceil(lw / tile), math.ceil(lh / tile)
+        for row in range(rows):
+            for col in range(cols):
+                x, y = col * tile, row * tile
+                box = (max(0, x - overlap), max(0, y - overlap),
+                       min(lw, x + tile + overlap), min(lh, y + tile + overlap))
+                lim.crop(box).save(os.path.join(ld, f"{col}_{row}.jpg"), "JPEG", quality=q)
+                n += 1
+    with open(os.path.join(out_dir, name + ".dzi"), "w") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
+                f'<Image TileSize="{tile}" Overlap="{overlap}" Format="jpg" '
+                'xmlns="http://schemas.microsoft.com/deepzoom/2008">'
+                f'<Size Width="{W}" Height="{H}"/></Image>')
+    return W, H, n
 
 
 def main():
@@ -235,6 +269,41 @@ def main():
         dodont.append({"title": item["title"], "take": item["take"],
                        "kind": item["kind"], "src": src, "w": w, "h": h})
 
+    # complete-segment pilot tiles (fully annotated) for the Demos & Examples tab
+    pilot = []
+    pj = os.path.join(PILOT, "_annotations.coco.json")
+    if os.path.exists(pj):
+        pd = json.load(open(pj)); pid2n = {c["id"]: c["name"] for c in pd["categories"]}
+        for im_rec in pd["images"]:
+            W0 = im_rec["width"]
+            pim = Image.open(os.path.join(PILOT, im_rec["file_name"])).convert("RGB")
+            sc = 820 / max(pim.width, pim.height)
+            ow, oh = round(pim.width*sc), round(pim.height*sc)
+            pim2 = pim.resize((ow, oh), Image.LANCZOS)
+            buf = io.BytesIO(); pim2.save(buf, "JPEG", quality=85)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            psc = ow / W0
+            polys = []
+            for a in pd["annotations"]:
+                if a["image_id"] != im_rec["id"]: continue
+                cn = pid2n[a["category_id"]]
+                if cn not in CLASS_INFO: continue
+                for ring in poly_from_seg(a["segmentation"]):
+                    polys.append({"cls": cn, "pts": [[round(x*psc,1), round(y*psc,1)] for x, y in ring]})
+            key = "pilot%d" % im_rec["id"]
+            images_payload[key] = {"src": "data:image/jpeg;base64," + b64, "w": ow, "h": oh,
+                                   "polys": polys, "name": im_rec["file_name"].split(".rf.")[0]}
+            pilot.append({"img": key, "focus": "__all__"})
+
+    # deep-zoom map pyramids (OpenSeadragon)
+    REPO = os.path.dirname(OUT)
+    mapdir = os.path.join(REPO, "assets", "maps")
+    os.makedirs(mapdir, exist_ok=True)
+    for m in MAPS:
+        name = os.path.splitext(os.path.basename(m["dzi"]))[0]
+        w, h, nt = make_dzi(MAP_SRC[m["code"]], mapdir, name)
+        print(f"  DZI {m['code']}: {w}x{h}, {nt} tiles")
+
     data = {"images": images_payload, "examples": examples,
             "colors": {k: v[0] for k, v in CLASS_INFO.items()},
             "info": {k: {"mode": v[1], "def": v[2], "cue": v[3], "do": v[4], "dont": v[5]}
@@ -243,7 +312,7 @@ def main():
             "placeholder": sorted(PLACEHOLDER), "dodont": dodont,
             "vegRaw": veg_raw, "vegColor": CLASS_INFO["VEGETATION"][0],
             "marshVeg": examples.get("MARSH_VEGETATION", []),
-            "videos": VIDEOS, "maps": MAPS}
+            "videos": VIDEOS, "maps": MAPS, "pilot": pilot}
 
     # embed Lora woff2 (variable weight) as base64 @font-face, self-contained
     def font_b64(p):
@@ -433,10 +502,12 @@ canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:7px;bac
 .vids{display:grid;gap:30px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
 .vid h3{margin-bottom:4px}
 .vid p{margin:0 0 10px;color:var(--muted);font-size:14px}
-.vid video{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:#000;display:block}
+.vframe{position:relative;width:100%;padding-top:56.25%;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000}
+.vframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 @media(max-width:560px){.vids{grid-template-columns:1fr}}
 
-/* maps pan/zoom */
+/* maps deep-zoom (OpenSeadragon) */
+.osdview{border:1px solid var(--line);border-radius:12px;background:var(--field);height:74vh;min-height:440px}
 .mapbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .sitebtn{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink);background:var(--raise);
   border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer}
@@ -507,7 +578,7 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
     </div>
 
     <div class="block">
-      <h2>Do not draw plain grass or bush</h2>
+      <h2 style="color:var(--bad)">Do not draw plain grass or bush</h2>
       <div class="hr"></div>
       <p>Leave plain grass and bush <b>empty</b>. The computer fills it in later. <i>If you paint it, that is a mistake.</i></p>
       <p><span class="draw-note">You only draw two green things:</span> <b>TREES</b> (tall, with shadow) and <b>MARSH_VEGETATION</b> (green on wet, muddy ground).</p>
@@ -544,11 +615,14 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
     <div id="catalog"></div>
   </section>
 
-  <!-- VIDEOS -->
+  <!-- DEMOS & EXAMPLES -->
   <section class="panel" id="tab-videos">
-    <h2>Watch first</h2>
-    <p class="lede" style="margin-bottom:18px">Two short screen recordings of the annotation tool. Watch these before you start.</p>
+    <h2>Demos and finished examples</h2>
+    <p class="lede" style="margin-bottom:18px">Watch the demos, then study two finished tiles below. Use <b>Show</b> to see one class or all of them.</p>
     <div id="videos"></div>
+    <h3 style="margin-top:46px">Finished tiles, fully annotated</h3>
+    <p class="lede" style="margin:6px 0 14px">The same areas from the demo, completely labeled. Everything is marked except plain grass and bush.</p>
+    <div id="pilot"></div>
   </section>
 
   <!-- MAPS -->
@@ -586,15 +660,16 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
     </div>
   </section>
 
-  <footer>Examples auto-pulled from the 71 verified FloodSight tiles. BRIDGE and IRRIGATION_CHANNEL examples pending. Built for the NAAMII Agri AI annotation team.</footer>
+  <footer>Examples drawn from verified FloodSight tiles. Built for the NAAMII Agri AI annotation team.</footer>
 </div>
 
 <div class="lb" id="lb"><img id="lbimg" alt="enlarged example"></div>
 
+<script src="assets/vendor/openseadragon/openseadragon.min.js"></script>
 <script>
 const D = /*__DATA__*/;
 const TAGTXT = {draw:"draw", nodraw:"do not draw", explicit:"draw explicitly"};
-const TABS = [["decide","Start here"],["videos","Demo Videos"],["classes","Classes"],
+const TABS = [["decide","Start here"],["videos","Demos & Examples"],["classes","Classes"],
               ["maps","Maps"],["compare","Compare"],["examples","Do & Don't"]];
 let GID = 0;
 
@@ -690,7 +765,7 @@ const chip=(cls,leave)=> leave
 const flow=document.getElementById('flow');
 if(flow){
   const out=(cond,cls,leave)=>`<div class="outcome"><span class="cond">${cond}</span><span class="arr">&rarr;</span>${chip(cls,leave)}</div>`;
-  const obv=[['Building roof','HOUSE'],['Road or path','ROAD'],['Open water','WATER'],['Bridge','BRIDGE'],['Straight man-made ditch','IRRIGATION_CHANNEL']];
+  const obv=[['Building roof','HOUSE'],['Road or path','ROAD'],['Open water','WATER']];
   flow.innerHTML=`
    <div class="obvious"><div class="ohead">First, the easy ones. See any of these? Mark them right away:</div>
      <div class="orow">${obv.map(([l,c])=>`<span class="oitem">${l} <span class="arr">&rarr;</span> ${chip(c)}</span>`).join('')}</div>
@@ -768,51 +843,48 @@ const cmp=document.getElementById('compare');
 cmp.appendChild(compareBox(allCls.includes('GROWING_FIELD')?'GROWING_FIELD':allCls[0]));
 cmp.appendChild(compareBox(allCls.includes('BARREN_FIELD')?'BARREN_FIELD':allCls[1]||allCls[0]));
 
-/* videos */
+/* videos (Google Drive embeds) */
 const vids=document.getElementById('videos');
 if(vids){vids.className='vids';
   D.videos.forEach(v=>{const d=document.createElement('div');d.className='vid';
-    d.innerHTML=`<h3>${v.title}</h3><p>${v.desc}</p><video controls preload="metadata" src="${v.src}"></video>`;
+    d.innerHTML=`<h3>${v.title}</h3><p>${v.desc}</p><div class="vframe"><iframe src="https://drive.google.com/file/d/${v.drive}/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
     vids.appendChild(d);});}
 
-/* maps pan/zoom */
+/* finished pilot tiles (fully annotated), each in a raw/overlay viewer */
+const pilotEl=document.getElementById('pilot');
+if(pilotEl && D.pilot && D.pilot.length){
+  D.pilot.forEach(ex=>{const wrap=document.createElement('div');wrap.style.marginBottom='30px';
+    wrap.appendChild(viewer([ex],{focus:ex.focus}));pilotEl.appendChild(wrap);});
+}
+
+/* maps: deep-zoom via OpenSeadragon (loads only visible tiles -> full res, fast) */
 const mapsEl=document.getElementById('maps');
 if(mapsEl && D.maps && D.maps.length){
   const bar=document.createElement('div');bar.className='mapbar';
   D.maps.forEach((m,i)=>{const b=document.createElement('button');b.className='sitebtn'+(i===0?' active':'');
     b.textContent=m.name;b.dataset.i=i;bar.appendChild(b);});
   const zb=document.createElement('div');zb.className='zoombtn';
-  zb.innerHTML='<button data-z="in">+</button><button data-z="out">&minus;</button><button data-z="fit">Fit</button>';
+  zb.innerHTML='<button data-z="in">+</button><button data-z="out">&minus;</button><button data-z="home">Fit</button>';
   bar.appendChild(zb);
-  const view=document.createElement('div');view.className='mapview';
-  const img=document.createElement('img');view.appendChild(img);
+  const view=document.createElement('div');view.className='osdview';view.id='osd';
   const hint=document.createElement('div');hint.className='maphint';
   mapsEl.appendChild(bar);mapsEl.appendChild(view);mapsEl.appendChild(hint);
-  let scale=1,tx=0,ty=0,natW=0,natH=0,fit=1;
-  const apply=()=>{img.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;};
-  function clamp(){const vw=view.clientWidth,vh=view.clientHeight,w=natW*scale,h=natH*scale;
-    tx = w<=vw ? (vw-w)/2 : Math.min(0,Math.max(vw-w,tx));
-    ty = h<=vh ? (vh-h)/2 : Math.min(0,Math.max(vh-h,ty));}
-  function fitView(){if(!natW||!view.clientWidth)return;fit=Math.min(view.clientWidth/natW,view.clientHeight/natH);
-    scale=fit;tx=0;ty=0;clamp();apply();}
-  window.__refitMap=fitView;
-  function load(i){const m=D.maps[i];img.onload=()=>{natW=img.naturalWidth;natH=img.naturalHeight;fitView();};img.src=m.src;
-    hint.textContent=m.name+' (pre-flood) — the full site with its tile grid.';
+  let osd=null, inited=false;
+  function load(i){const m=D.maps[i];
+    if(osd){osd.destroy();osd=null;}
+    osd=OpenSeadragon({element:view, prefixUrl:'', tileSources:m.dzi, showNavigationControl:false,
+      visibilityRatio:1, minZoomImageRatio:0.8, maxZoomPixelRatio:2.5, animationTime:0.5,
+      gestureSettingsMouse:{clickToZoom:false}});
+    hint.textContent=m.name+' (pre-flood). Scroll or use + / − to zoom to full detail, drag to move.';
     [...bar.querySelectorAll('.sitebtn')].forEach(b=>b.classList.toggle('active',+b.dataset.i===i));}
-  function zoomAt(cx,cy,f){const ns=Math.min(8,Math.max(fit,scale*f));const ix=(cx-tx)/scale,iy=(cy-ty)/scale;
-    scale=ns;tx=cx-ix*scale;ty=cy-iy*scale;clamp();apply();}
   bar.querySelectorAll('.sitebtn').forEach(b=>b.onclick=()=>load(+b.dataset.i));
-  zb.querySelector('[data-z=in]').onclick=()=>zoomAt(view.clientWidth/2,view.clientHeight/2,1.4);
-  zb.querySelector('[data-z=out]').onclick=()=>zoomAt(view.clientWidth/2,view.clientHeight/2,1/1.4);
-  zb.querySelector('[data-z=fit]').onclick=fitView;
-  view.addEventListener('wheel',e=>{e.preventDefault();const r=view.getBoundingClientRect();
-    zoomAt(e.clientX-r.left,e.clientY-r.top,e.deltaY<0?1.15:1/1.15);},{passive:false});
-  let drag=false,lx,ly;
-  view.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;view.classList.add('drag');view.setPointerCapture(e.pointerId);});
-  view.addEventListener('pointermove',e=>{if(!drag)return;tx+=e.clientX-lx;ty+=e.clientY-ly;lx=e.clientX;ly=e.clientY;clamp();apply();});
-  view.addEventListener('pointerup',()=>{drag=false;view.classList.remove('drag');});
-  addEventListener('resize',()=>{if(natW){clamp();apply();}});
-  load(0);
+  const zoom=f=>{if(osd){osd.viewport.zoomBy(f);osd.viewport.applyConstraints();}};
+  zb.querySelector('[data-z=in]').onclick=()=>zoom(1.5);
+  zb.querySelector('[data-z=out]').onclick=()=>zoom(1/1.5);
+  zb.querySelector('[data-z=home]').onclick=()=>{if(osd)osd.viewport.goHome();};
+  /* init lazily the first time the Maps tab is shown (needs a sized container) */
+  window.__refitMap=()=>{ if(!inited && typeof OpenSeadragon!=='undefined'){inited=true;load(0);} };
+  if(document.getElementById('tab-maps').classList.contains('active')) requestAnimationFrame(window.__refitMap);
 }
 
 /* do / don't figures */
