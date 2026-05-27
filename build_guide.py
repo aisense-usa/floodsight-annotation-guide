@@ -18,22 +18,23 @@ OUT    = "/Users/jc/Downloads/floodsight-annotation-guide/index.html"
 
 # Onboarding videos hosted on Google Drive (embedded via /preview iframe)
 VIDEOS = [
- {"title": "Full annotation demo", "desc": "A complete walkthrough of annotating tiles, start to finish.",
+ {"title": "Annotation Example 1", "desc": "A complete walkthrough of annotating tiles, start to finish.",
   "drive": "1r9JH2PTy91cnloy-kHa5twPbflCkDPjV"},
- {"title": "Tool walkthrough", "desc": "A shorter look at the annotation tool and how to use it.",
+ {"title": "Annotation Example 2", "desc": "A shorter look at the annotation tool and how to use it.",
   "drive": "1z7Jtgngo6o2g8lCsHBuY1xzbKPfw0KnY"},
 ]
-# Deep-zoom maps: DZI pyramids generated from the original index maps, viewed with OpenSeadragon
-MAP_SRC = {
- "HK": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HK/pre_flood/tile_index_map_3800.png",
- "HR": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HR/pre_flood/tile_index_map_3800.png",
- "SS": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/SS/pre_flood/tile_index_map_3800.png",
-}
-MAPS = [
- {"code": "HK", "name": "Hanumannagar Kankalini", "dzi": "assets/maps/hk.dzi"},
- {"code": "HR", "name": "Harinagar", "dzi": "assets/maps/hr.dzi"},
- {"code": "SS", "name": "Sunsari Saptakoshi", "dzi": "assets/maps/ss.dzi"},
+# Maps: existing public XYZ slippy-map tiles (FAO BIPAD) on GCS, zoom 10-19, pre+post.
+TILE_BASE = "https://storage.googleapis.com/fao-bipad/tiles"
+MAPS = [  # bounds = [[south,west],[north,east]] from manifest clean-tile centroids
+ {"code": "HK", "name": "Hanumannagar Kankalini", "bounds": [[26.5416, 86.8934], [26.5755, 86.9193]]},
+ {"code": "HR", "name": "Harinagar",              "bounds": [[26.5203, 87.1345], [26.5448, 87.1530]]},
+ {"code": "SS", "name": "Sunsari Saptakoshi",     "bounds": [[26.7049, 86.9523], [26.7219, 86.9718]]},
 ]
+MANIFEST_3800 = {  # for the red 3800-tile grid overlay
+ "HK": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HK/pre_flood/manifest_3800.json",
+ "HR": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/HR/pre_flood/manifest_3800.json",
+ "SS": "/Volumes/PortableSSD/AI Sense/Nepal/GeoAI/Nepal_Flood/SS/pre_flood/manifest_3800.json",
+}
 
 OUT_PX   = 520
 JPEG_Q   = 84
@@ -295,14 +296,18 @@ def main():
                                    "polys": polys, "name": im_rec["file_name"].split(".rf.")[0]}
             pilot.append({"img": key, "focus": "__all__"})
 
-    # deep-zoom map pyramids (OpenSeadragon)
-    REPO = os.path.dirname(OUT)
-    mapdir = os.path.join(REPO, "assets", "maps")
-    os.makedirs(mapdir, exist_ok=True)
-    for m in MAPS:
-        name = os.path.splitext(os.path.basename(m["dzi"]))[0]
-        w, h, nt = make_dzi(MAP_SRC[m["code"]], mapdir, name)
-        print(f"  DZI {m['code']}: {w}x{h}, {nt} tiles")
+    # red 3800-tile grid (UTM bounds -> lat/lon) for the Leaflet overlay
+    from pyproj import Transformer
+    _tf = Transformer.from_crs("EPSG:32645", "EPSG:4326", always_xy=True)
+    map_grid = {}
+    for code, mpath in MANIFEST_3800.items():
+        cells = []
+        for t in json.load(open(mpath))["tiles"]:
+            e0, n0, e1, n1 = t["bounds_utm"]
+            w_, s_ = _tf.transform(e0, n0); e_, n_ = _tf.transform(e1, n1)
+            cells.append([round(s_, 6), round(w_, 6), round(n_, 6), round(e_, 6), t["name"].split("_")[-1]])
+        map_grid[code] = cells
+        print(f"  grid {code}: {len(cells)} cells")
 
     data = {"images": images_payload, "examples": examples,
             "colors": {k: v[0] for k, v in CLASS_INFO.items()},
@@ -312,7 +317,8 @@ def main():
             "placeholder": sorted(PLACEHOLDER), "dodont": dodont,
             "vegRaw": veg_raw, "vegColor": CLASS_INFO["VEGETATION"][0],
             "marshVeg": examples.get("MARSH_VEGETATION", []),
-            "videos": VIDEOS, "maps": MAPS, "pilot": pilot}
+            "videos": VIDEOS, "maps": MAPS, "tileBase": TILE_BASE,
+            "mapGrid": map_grid, "pilot": pilot}
 
     # embed Lora woff2 (variable weight) as base64 @font-face, self-contained
     def font_b64(p):
@@ -506,8 +512,13 @@ canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:7px;bac
 .vframe iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 @media(max-width:560px){.vids{grid-template-columns:1fr}}
 
-/* maps deep-zoom (OpenSeadragon) */
-.osdview{border:1px solid var(--line);border-radius:12px;background:var(--field);height:74vh;min-height:440px}
+/* maps (Leaflet) */
+.mapctrl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-left:auto;font-size:13px;color:var(--muted)}
+.mapctrl .seg{display:flex;align-items:center;gap:5px;cursor:pointer}
+.mapctrl input{accent-color:var(--accent)}
+.mapbox{height:74vh;min-height:460px;border:1px solid var(--line);border-radius:12px;background:var(--field);overflow:hidden}
+.leaflet-container{background:var(--field);font-family:var(--sans)}
+.tnum{color:#fff;font:600 10px/14px var(--mono,monospace);text-align:center;text-shadow:0 0 2px #000,0 0 2px #000;pointer-events:none;white-space:nowrap}
 .mapbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .sitebtn{font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--ink);background:var(--raise);
   border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer}
@@ -665,7 +676,8 @@ footer{margin-top:54px;padding-top:18px;border-top:1px solid var(--line);color:v
 
 <div class="lb" id="lb"><img id="lbimg" alt="enlarged example"></div>
 
-<script src="assets/vendor/openseadragon/openseadragon.min.js"></script>
+<link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
+<script src="assets/vendor/leaflet/leaflet.js"></script>
 <script>
 const D = /*__DATA__*/;
 const TAGTXT = {draw:"draw", nodraw:"do not draw", explicit:"draw explicitly"};
@@ -857,33 +869,44 @@ if(pilotEl && D.pilot && D.pilot.length){
     wrap.appendChild(viewer([ex],{focus:ex.focus}));pilotEl.appendChild(wrap);});
 }
 
-/* maps: deep-zoom via OpenSeadragon (loads only visible tiles -> full res, fast) */
+/* maps: Leaflet over existing GCS XYZ tiles (full res, only visible tiles load) + red 3800 grid */
 const mapsEl=document.getElementById('maps');
-if(mapsEl && D.maps && D.maps.length){
+if(mapsEl && D.maps && D.maps.length && window.L){
   const bar=document.createElement('div');bar.className='mapbar';
   D.maps.forEach((m,i)=>{const b=document.createElement('button');b.className='sitebtn'+(i===0?' active':'');
     b.textContent=m.name;b.dataset.i=i;bar.appendChild(b);});
-  const zb=document.createElement('div');zb.className='zoombtn';
-  zb.innerHTML='<button data-z="in">+</button><button data-z="out">&minus;</button><button data-z="home">Fit</button>';
-  bar.appendChild(zb);
-  const view=document.createElement('div');view.className='osdview';view.id='osd';
+  const ctrl=document.createElement('div');ctrl.className='mapctrl';
+  ctrl.innerHTML='<label class="seg"><input type="radio" name="ph" value="pre" checked> pre-flood</label>'+
+                 '<label class="seg"><input type="radio" name="ph" value="post"> post-flood</label>'+
+                 '<label class="seg"><input type="checkbox" id="gridlbl"> tile numbers</label>';
+  bar.appendChild(ctrl);
+  const view=document.createElement('div');view.id='map';view.className='mapbox';
   const hint=document.createElement('div');hint.className='maphint';
   mapsEl.appendChild(bar);mapsEl.appendChild(view);mapsEl.appendChild(hint);
-  let osd=null, inited=false;
-  function load(i){const m=D.maps[i];
-    if(osd){osd.destroy();osd=null;}
-    osd=OpenSeadragon({element:view, prefixUrl:'', tileSources:m.dzi, showNavigationControl:false,
-      visibilityRatio:1, minZoomImageRatio:0.8, maxZoomPixelRatio:2.5, animationTime:0.5,
-      gestureSettingsMouse:{clickToZoom:false}});
-    hint.textContent=m.name+' (pre-flood). Scroll or use + / − to zoom to full detail, drag to move.';
+  let map=null,tile=null,gridL=null,lblL=null,cur=0,phase='pre',inited=false;
+  function setTiles(){const c=D.maps[cur].code;
+    if(tile)map.removeLayer(tile);
+    tile=L.tileLayer(D.tileBase+'/'+c+'/'+phase+'/{z}/{x}/{y}.png',
+      {minZoom:10,maxNativeZoom:19,maxZoom:21,tileSize:256,attribution:'NAXA / FAO'}).addTo(map);
+    hint.textContent=D.maps[cur].name+' ('+phase+'-flood). Red boxes = the 3800x3800 tiles. Scroll to zoom, drag to move.';}
+  function setGrid(){const c=D.maps[cur].code;
+    if(gridL)map.removeLayer(gridL); if(lblL){map.removeLayer(lblL);}
+    gridL=L.layerGroup(); lblL=L.layerGroup();
+    (D.mapGrid[c]||[]).forEach(g=>{const s=g[0],w=g[1],n=g[2],e=g[3];
+      L.rectangle([[s,w],[n,e]],{color:'#E0322E',weight:1,fill:false,interactive:false}).addTo(gridL);
+      lblL.addLayer(L.marker([(s+n)/2,(w+e)/2],{interactive:false,
+        icon:L.divIcon({className:'tnum',html:g[4],iconSize:[44,14]})}));});
+    gridL.addTo(map); updateLabels();}
+  function updateLabels(){if(!map)return;const want=ctrl.querySelector('#gridlbl').checked||map.getZoom()>=16;
+    if(want){if(!map.hasLayer(lblL))lblL.addTo(map);}else if(map.hasLayer(lblL))map.removeLayer(lblL);}
+  function load(i){cur=i;setTiles();setGrid();map.fitBounds(D.maps[i].bounds);
     [...bar.querySelectorAll('.sitebtn')].forEach(b=>b.classList.toggle('active',+b.dataset.i===i));}
   bar.querySelectorAll('.sitebtn').forEach(b=>b.onclick=()=>load(+b.dataset.i));
-  const zoom=f=>{if(osd){osd.viewport.zoomBy(f);osd.viewport.applyConstraints();}};
-  zb.querySelector('[data-z=in]').onclick=()=>zoom(1.5);
-  zb.querySelector('[data-z=out]').onclick=()=>zoom(1/1.5);
-  zb.querySelector('[data-z=home]').onclick=()=>{if(osd)osd.viewport.goHome();};
-  /* init lazily the first time the Maps tab is shown (needs a sized container) */
-  window.__refitMap=()=>{ if(!inited && typeof OpenSeadragon!=='undefined'){inited=true;load(0);} };
+  ctrl.querySelectorAll('input[name=ph]').forEach(r=>r.onchange=()=>{phase=r.value;setTiles();});
+  ctrl.querySelector('#gridlbl').onchange=updateLabels;
+  function init(){if(inited)return;inited=true;
+    map=L.map(view,{minZoom:10,maxZoom:21});map.on('zoomend',updateLabels);load(0);}
+  window.__refitMap=()=>{ if(!inited)init(); else map.invalidateSize(); };
   if(document.getElementById('tab-maps').classList.contains('active')) requestAnimationFrame(window.__refitMap);
 }
 
