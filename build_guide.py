@@ -887,7 +887,7 @@ if(mapsEl && D.maps && D.maps.length && window.L){
   function setTiles(){const c=D.maps[cur].code;
     if(tile)map.removeLayer(tile);
     tile=L.tileLayer(D.tileBase+'/'+c+'/'+phase+'/{z}/{x}/{y}.png',
-      {minZoom:10,maxNativeZoom:19,maxZoom:21,tileSize:256,attribution:'NAXA / FAO'}).addTo(map);
+      {minZoom:10,maxNativeZoom:19,maxZoom:19,tileSize:256,attribution:'NAXA / FAO'}).addTo(map);
     hint.textContent=D.maps[cur].name+' ('+phase+'-flood). Red boxes = the 3800x3800 tiles. Scroll to zoom, drag to move.';}
   function setGrid(){const c=D.maps[cur].code;
     if(gridL)map.removeLayer(gridL); if(lblL){map.removeLayer(lblL);}
@@ -905,7 +905,7 @@ if(mapsEl && D.maps && D.maps.length && window.L){
   ctrl.querySelectorAll('input[name=ph]').forEach(r=>r.onchange=()=>{phase=r.value;setTiles();});
   ctrl.querySelector('#gridlbl').onchange=updateLabels;
   function init(){if(inited)return;inited=true;
-    map=L.map(view,{minZoom:10,maxZoom:21});map.on('zoomend',updateLabels);load(0);}
+    map=L.map(view,{minZoom:10,maxZoom:19});map.on('zoomend',updateLabels);load(0);}
   window.__refitMap=()=>{ if(!inited)init(); else map.invalidateSize(); };
   if(document.getElementById('tab-maps').classList.contains('active')) requestAnimationFrame(window.__refitMap);
 }
